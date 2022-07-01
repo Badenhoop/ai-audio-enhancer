@@ -1,6 +1,5 @@
 from argparse import ArgumentParser
-from matplotlib.pyplot import title
-from pytube import Search
+from pytube import Search, Stream
 import os
 from uuid import uuid4
 import pandas as pd
@@ -8,19 +7,43 @@ from tqdm import tqdm
 import logging
 
 
+logger = logging.getLogger('downloader')
+
+
 class InsufficientResults(Exception):
     pass
 
 
-def download_youtube_audio(vid, path):
-    stream = vid.streams.filter(only_audio=True, file_extension='mp4').order_by('abr').asc().first()
+def download_stream(stream, path):
     directory = os.path.dirname(path)
     filename = os.path.basename(path)
     if not os.path.exists(directory):
         os.makedirs(directory)
-    info = dict(audio_bitrate=stream.abr)
+    info = dict(
+        bitrate=stream.bitrate,
+        audio_codec=stream.audio_codec,
+        filesize=stream.filesize)
     stream.download(output_path=directory, filename=filename)
     return info
+
+
+def get_videos_with_valid_stream(vids):
+    result_vids = []
+    result_streams = []
+    for vid in vids:
+        try:
+            streams = vid.streams.filter(only_audio=True, file_extension='mp4')
+            if len(streams) == 0:
+                continue
+            stream = streams.order_by('bitrate').asc().first()
+            result_vids.append(vid)
+            result_streams.append(stream)
+        except KeyError as a:
+            # There seems to be a bug in pytube in which it tries to reference 
+            # the attribute 'bitrate' even though it does not exist in the 
+            # method streams.filter().
+            logger.error(a)
+    return result_vids, result_streams
 
 
 def check_vid_title(title, artist, vid):
@@ -45,17 +68,18 @@ def download_cover_songs(title,
                          min_num_results=5,
                          max_num_results=10):
     vids = search_cover_songs(title, artist, max_num_results=max_num_results)
+    vids, streams = get_videos_with_valid_stream(vids)
     if len(vids) < min_num_results:
         raise InsufficientResults(f'Found {len(vids)} videos for title "{title}" and artist "{artist}" which is below the minimum number of videos ({min_num_results}).')
 
     infos = []
-    for i, vid in enumerate(vids):
+    for i, (vid, stream) in enumerate(zip(vids, streams)):
         if vid.length > max_length:
             continue
         id = str(uuid4())
         rel_path = os.path.join(artist, title, f'{id}.mp4')
         download_path = os.path.join(root_dir, rel_path)
-        info = download_youtube_audio(vid, download_path)
+        info = download_stream(stream, download_path)
         info |= dict(
             id=id,
             title=title,
@@ -83,18 +107,18 @@ def download_cover_song_dataset(download_songs_csv,
     processed_songs = processed_songs_df.to_dict('records')
     
     dataset = pd.read_csv(dataset_csv).to_dict('records') \
-        if os.path.exist(dataset_csv) \
+        if os.path.exists(dataset_csv) \
         else []
 
     # Filter out songs that have already been processed.
     download_songs_df = download_songs_df[
-        ~download_songs_df.set_index(['title', 'artist'].index.isin(processed_songs_df.set_index(['title', 'artist']).index))
+        ~download_songs_df.set_index(['title', 'artist']).index.isin(processed_songs_df.set_index(['title', 'artist']).index)
     ]
 
     download_songs = list(download_songs_df.itertuples())
     success_counter = 0
     for i, song in enumerate(tqdm(download_songs)):
-        logging.debug(f'Iteration {i+1}/{len(download_songs)}: Looking at song {song}.')
+        logger.info(f'Iteration {i+1}/{len(download_songs)}: Looking at song {song}.')
         success = False
         try:
             infos = download_cover_songs(
@@ -106,9 +130,9 @@ def download_cover_song_dataset(download_songs_csv,
                 max_num_results=10)
             dataset.extend(infos)
             success = True
-            logging.info('Successfully downloaded song!')
+            logger.info('Successfully downloaded song!')
         except InsufficientResults as e:
-            logging.warning(e)
+            logger.warning(e)
 
         if success:
             if success_counter % 10 == 0:
@@ -128,19 +152,24 @@ def download_cover_song_dataset(download_songs_csv,
 
 
 def main(args):
-    logging.basicConfig(filename='downloader.log', encoding='utf-8', level=logging.DEBUG)
-    logging.debug(f'Arguments: {args}')
+    logger.info(f'Program arguments: {args}')
     download_cover_song_dataset(
-        download_songs_csv=args.songs_csv,
+        download_songs_csv=args.download_songs_csv,
         processed_songs_csv=args.processed_songs_csv,
         dataset_csv=args.dataset_csv,
         root_dir=args.root_dir)
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser(description='prepares a dataset to train DiffWave')
-    parser.add_argument('download-songs-csv', type=str, help='csv file of the songs to download.')
-    parser.add_argument('processed-songs-csv', type=str, help='csv file that contains the already processed songs.')
-    parser.add_argument('dataset-csv', type=str, help='csv file of the dataset.')
-    parser.add_argument('root-dir', type=str, help='Root directory of the downloaded content.')
+    logging.basicConfig(
+        filename='downloader.log', 
+        filemode='w', 
+        encoding='utf-8',
+        level=logging.INFO)
+
+    parser = ArgumentParser(description='Downloads cover songs from YouTube.')
+    parser.add_argument('download_songs_csv', type=str, help='csv file of the songs to download.')
+    parser.add_argument('processed_songs_csv', type=str, help='csv file that contains the already processed songs.')
+    parser.add_argument('dataset_csv', type=str, help='csv file of the dataset.')
+    parser.add_argument('root_dir', type=str, help='Root directory of the downloaded content.')
     main(parser.parse_args())
