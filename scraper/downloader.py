@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from pytube import Search, Stream
+from pytube import Search
 import os
 from uuid import uuid4
 import pandas as pd
@@ -95,20 +95,36 @@ def download_cover_songs(title,
     return infos
 
 
+def add_items(existing_items, new_items, file):
+    write_header = len(existing_items) == 0
+    pd.DataFrame(new_items).to_csv(
+        file, 
+        index=False,
+        header=write_header)
+    existing_items.extend(new_items)
+
+
 def download_cover_song_dataset(download_songs_csv, 
                                 processed_songs_csv, 
                                 dataset_csv, 
                                 root_dir):
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir)
+
     download_songs_df = pd.read_csv(download_songs_csv)
 
-    processed_songs_df = pd.read_csv(processed_songs_csv) \
-        if os.path.exists(processed_songs_csv) \
-        else pd.DataFrame([], columns=['title', 'artist', 'success'])
-    processed_songs = processed_songs_df.to_dict('records')
+    if os.path.exists(processed_songs_csv):
+        processed_songs_df = pd.read_csv(processed_songs_csv)
+        processed_songs = processed_songs_df.to_dict('records')
+    else:
+        processed_songs_df = pd.DataFrame([], columns=['title', 'artist', 'success'])
+        processed_songs = []
     
-    dataset = pd.read_csv(dataset_csv).to_dict('records') \
-        if os.path.exists(dataset_csv) \
-        else []
+    if os.path.exists(dataset_csv):
+        dataset_df = pd.read_csv(dataset_csv)
+        dataset = dataset_df.to_dict('records')
+    else:
+        dataset = []
 
     # Filter out songs that have already been processed.
     download_songs_df = download_songs_df[
@@ -116,35 +132,30 @@ def download_cover_song_dataset(download_songs_csv,
     ]
 
     download_songs = list(download_songs_df.itertuples())
-    success_counter = 0
-    for i, song in enumerate(tqdm(download_songs)):
-        logger.info(f'Iteration {i+1}/{len(download_songs)}: Looking at song {song}.')
-        success = False
-        try:
-            infos = download_cover_songs(
+    with open(dataset_csv, 'a') as dataset_csv_file, \
+         open(processed_songs_csv, 'a') as processed_songs_csv_file:
+        for i, song in enumerate(tqdm(download_songs)):
+            logger.info(f'Iteration {i+1}/{len(download_songs)}: Looking at song {song}.')
+            success = False
+            try:
+                infos = download_cover_songs(
+                    title=song.title,
+                    artist=song.artist,
+                    root_dir=root_dir,
+                    max_length=600,
+                    min_num_results=5,
+                    max_num_results=10)
+                add_items(dataset, infos, dataset_csv_file)
+                success = True
+                logger.info('Successfully downloaded song!')
+            except InsufficientResults as e:
+                logger.warning(e)
+
+            info = dict(
                 title=song.title,
                 artist=song.artist,
-                root_dir=root_dir,
-                max_length=600,
-                min_num_results=5,
-                max_num_results=10)
-            dataset.extend(infos)
-            success = True
-            logger.info('Successfully downloaded song!')
-        except InsufficientResults as e:
-            logger.warning(e)
-
-        if success:
-            if success_counter % 10 == 0:
-                pd.DataFrame(dataset).to_csv(dataset_csv, index=False)
-            success_counter += 1
-
-        processed_songs.append(dict(
-            title=song.title,
-            artist=song.artist,
-            success=success))
-        if i % 10 == 0:
-            pd.DataFrame(processed_songs).to_csv(processed_songs_csv, index=False)
+                success=success)
+            add_items(processed_songs, [info], processed_songs_csv_file)
 
     dataset_df = pd.DataFrame(dataset)
     dataset_df.to_csv(dataset_csv, index=False)
