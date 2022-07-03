@@ -1,5 +1,7 @@
 from argparse import ArgumentParser
-from pytube import Search
+from async_timeout import timeout
+from pytube import Search, Stream
+from pytube.exceptions import VideoUnavailable
 import os
 from uuid import uuid4
 import pandas as pd
@@ -23,7 +25,11 @@ def download_stream(stream, path):
         bitrate=stream.bitrate,
         audio_codec=stream.audio_codec,
         filesize=stream.filesize)
-    stream.download(output_path=directory, filename=filename)
+    stream.download(
+        output_path=directory, 
+        filename=filename, 
+        timeout=30,
+        max_retries=3)
     return info
 
 
@@ -38,11 +44,15 @@ def get_videos_with_valid_stream(vids):
             stream = streams.order_by('bitrate').asc().first()
             result_vids.append(vid)
             result_streams.append(stream)
-        except KeyError as a:
+        except KeyError as e:
             # There seems to be a bug in pytube in which it tries to reference 
             # the attribute 'bitrate' even though it does not exist in the 
             # method streams.filter().
-            logger.error(a)
+            logger.error(e)
+        except VideoUnavailable as e:
+            # Some videos are not available for download e.g. live videos.
+            logger.error(e)
+
     return result_vids, result_streams
 
 
@@ -176,7 +186,7 @@ if __name__ == '__main__':
         filename='downloader.log', 
         filemode='w', 
         encoding='utf-8',
-        level=logging.INFO)
+        level=logging.DEBUG)
 
     parser = ArgumentParser(description='Downloads cover songs from YouTube.')
     parser.add_argument('download_songs_csv', type=str, help='csv file of the songs to download.')
