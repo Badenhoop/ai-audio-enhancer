@@ -1,12 +1,12 @@
 from argparse import ArgumentParser
-from async_timeout import timeout
-from pytube import Search, Stream
+from pytube import Search
 from pytube.exceptions import VideoUnavailable
 import os
 from uuid import uuid4
 import pandas as pd
 from tqdm import tqdm
 import logging
+import time
 
 
 logger = logging.getLogger('downloader')
@@ -48,10 +48,10 @@ def get_videos_with_valid_stream(vids):
             # There seems to be a bug in pytube in which it tries to reference 
             # the attribute 'bitrate' even though it does not exist in the 
             # method streams.filter().
-            logger.error(e)
+            logger.exception(e)
         except VideoUnavailable as e:
             # Some videos are not available for download e.g. live videos.
-            logger.error(e)
+            logger.exception(e)
 
     return result_vids, result_streams
 
@@ -147,19 +147,25 @@ def download_cover_song_dataset(download_songs_csv,
         for i, song in enumerate(tqdm(download_songs)):
             logger.info(f'Iteration {i+1}/{len(download_songs)}: Looking at song {song}.')
             success = False
-            try:
-                infos = download_cover_songs(
-                    title=song.title,
-                    artist=song.artist,
-                    root_dir=root_dir,
-                    max_length=600,
-                    min_num_results=5,
-                    max_num_results=10)
-                add_items(dataset, infos, dataset_csv_file)
-                success = True
-                logger.info('Successfully downloaded song!')
-            except InsufficientResults as e:
-                logger.warning(e)
+            while True:
+                try:
+                    infos = download_cover_songs(
+                        title=song.title,
+                        artist=song.artist,
+                        root_dir=root_dir,
+                        max_length=600,
+                        min_num_results=5,
+                        max_num_results=10)
+                    add_items(dataset, infos, dataset_csv_file)
+                    success = True
+                    logger.info('Successfully downloaded song!')
+                    break
+                except InsufficientResults as e:
+                    logger.warning(e)
+                    break
+                except Exception as e:
+                    logger.exception(e)
+                    time.sleep(1)
 
             info = dict(
                 title=song.title,
