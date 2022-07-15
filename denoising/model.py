@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
 import numpy as np
 
 
@@ -13,7 +13,7 @@ class DiffusionEmbedding(nn.Module):
         self.projection2 = nn.Linear(num_channels, num_channels)
 
     def forward(self, diffusion_step):
-        if isinstance(diffusion_step, int) or diffusion_step.dtype in [torch.int32, torch.int64]:
+        if diffusion_step.dtype in [torch.int32, torch.int64]:
             x = self.encoding[diffusion_step]
         else:
             x = self._lerp_encoding(diffusion_step)
@@ -53,21 +53,21 @@ class UpsamplingBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(UpsamplingBlock, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv1d(2 * in_channels, out_channels, kernel_size=7, stride=1, padding=3),
+            nn.Conv1d(in_channels + out_channels, out_channels, kernel_size=7, stride=1, padding=3),
             nn.LeakyReLU(inplace=True),
             nn.Conv1d(out_channels, out_channels, kernel_size=7, stride=1, padding=6, dilation=2),
             nn.LeakyReLU(inplace=True))
     
     def forward(self, x, skip):
-        x = F.upsample(x, size=skip.shape[2], mode='linear')
+        x = F.interpolate(x, size=skip.shape[2], mode='linear')
         x = torch.cat((x, skip), dim=1)
         x = self.conv(x)
         return x
 
 
-class DiffusionModel(nn.Module):
+class DiffusionUNetModel(nn.Module):
     def __init__(self, num_diffusion_steps):
-        super(DiffusionModel, self).__init__()
+        super(DiffusionUNetModel, self).__init__()
         self.diffusion_embedding = DiffusionEmbedding(
             num_diffusion_steps=num_diffusion_steps,
             num_channels=32)
@@ -120,16 +120,17 @@ class DiffusionModel(nn.Module):
 
         skip_connections = []
         for layer in self.down:
-            embedding_padded = torch.zeros(x.shape[1], device=x.device)
-            embedding_padded[:len(embedding)] = embedding
-            embedding_padded = embedding_padded.view(1, -1, 1)
-            x = x + embedding_padded
-            x = layer(x)
             skip_connections.append(x)
+            N, C, T = x.shape
+            embedding_padded = torch.zeros((N, C), dtype=x.dtype, device=x.device)
+            embedding_padded[:, :embedding.shape[1]] = embedding
+            x = x + embedding_padded[:, :, None]
+            x = layer(x)
 
         for i, layer in enumerate(self.up):
             skip = skip_connections[len(skip_connections) - i - 1]
             x = layer(x, skip)
 
         x = self.out_proj(x)
+        x = x.squeeze(1)
         return x

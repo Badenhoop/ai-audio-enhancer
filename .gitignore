@@ -4,3 +4,7 @@ songs
 *.csv
 *.log
 tmp
+wandb
+work_dirs
+__pycache__
+data
