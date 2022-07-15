@@ -1,5 +1,6 @@
-# ai-audio-enhancer
-An AI that turns low quality audio into high quality audio.
+# AI Audio Enhancer
+
+The goal of this project is to create an AI that turns low quality audio into high quality audio.
 
 ## Scraper
 
