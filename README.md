@@ -1,15 +1,11 @@
 # ai-audio-enhancer
 An AI that turns low quality audio into high quality audio.
 
-## The Crawler
+## Scraper
 
-- Find a large list of songs.
-- Crawl youtube for covers and original of that song.
-- Download audio from selected youtube videos.
-- Create a database of audio files.
-    - id
-    - title
-    - query
-    - length
-    - size
-    - tags
+Scrapes a large set of cover songs from YouTube (~250GB).
+The selected songs are compiled from the musicbrainz dataset and by filtering the most popular artists using the Spotify API.
+
+## Denoising
+
+A deep convolutional U-Net-style diffusion model trained on denoising songs.

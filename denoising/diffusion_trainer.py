@@ -84,7 +84,7 @@ class DiffusionTrainer:
                 loss = self._train_step(x)
                 if torch.isnan(loss).any():
                     raise RuntimeError(f'Detected NaN loss at step {self.step}.')
-                if self.step % 50 == 0 or self.step == steps:
+                if self.step % 5 == 0 or self.step == steps:
                     self._write_summary(batch, loss)
                 if self.step % len(self.data_loader) == 0 or self.step == steps:
                     self.save_to_checkpoint()

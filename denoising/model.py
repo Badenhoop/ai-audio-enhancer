@@ -84,12 +84,8 @@ class DiffusionUNetModel(nn.Module):
             DownsamplingBlock(128, 128),
             DownsamplingBlock(128, 256),
             DownsamplingBlock(256, 256),
-            DownsamplingBlock(256, 256),
-            DownsamplingBlock(256, 256),
         ])
         self.up = nn.ModuleList([
-            UpsamplingBlock(256, 256),
-            UpsamplingBlock(256, 256),
             UpsamplingBlock(256, 256),
             UpsamplingBlock(256, 128),
             UpsamplingBlock(128, 128),
