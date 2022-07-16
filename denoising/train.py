@@ -6,7 +6,7 @@ from config import Config
 from diffusion_trainer import DiffusionTrainer
 from model import DiffusionUNetModel
 from dataset import build_dataloader
-from utils import set_seed
+from utils import set_seed, build_noise_schedule
 from uuid import uuid4
 
 
@@ -16,13 +16,9 @@ def train(args):
 
     config = Config.fromfile(args.config)
     
-    noise_schedule = np.linspace(
-        start=config.noise_schedule.start,
-        stop=config.noise_schedule.stop,
-        num=config.noise_schedule.num)
+    noise_schedule = build_noise_schedule(config.training_noise_schedule)
     num_diffusion_steps = len(noise_schedule)
-    model = DiffusionUNetModel(num_diffusion_steps=num_diffusion_steps)
-    model = model.cuda()
+    model = DiffusionUNetModel(num_diffusion_steps=num_diffusion_steps).cuda()
 
     optimizer = torch.optim.Adam(
         params=model.parameters(), 

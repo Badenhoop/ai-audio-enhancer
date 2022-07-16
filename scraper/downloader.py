@@ -64,11 +64,15 @@ def check_vid_title(title, artist, vid):
 def search_cover_songs(title, artist, max_num_results=10, strict=True):
     assert max_num_results <= 20, 'Querying more than 20 results not supported yet.'
     s = Search(f'{title} {artist} cover')
-    results = s.results
-    if strict:
-        results = [vid for vid in results if check_vid_title(title, artist, vid)]
-    results = results[:min(len(s.results), max_num_results)]
-    return results
+    try:
+        results = s.results
+        if strict:
+            results = [vid for vid in results if check_vid_title(title, artist, vid)]
+        results = results[:min(len(s.results), max_num_results)]
+        return results
+    except KeyError as e:
+        logger.exception(e)
+        return []
 
 
 def download_cover_songs(title, 

@@ -1,15 +1,15 @@
+from distutils.command.config import config
 import torch
 import torch.nn as nn
 import numpy as np
 import os
 import wandb
 from tqdm import tqdm
+from config import Config
 
 # TODO:
-#   - Understand the noise scheduling
-#   - Add validation dataset
-#   - Add more metrics to summary
 #   - Save config to disk and in wandb
+#   - Understand relevance of fp16
 class DiffusionTrainer:
     def __init__(self,
                  work_dir,
@@ -27,7 +27,7 @@ class DiffusionTrainer:
         self.config = config
         noise_level = np.cumprod(1 - noise_schedule)
         self.noise_level = torch.tensor(noise_level.astype(np.float32))
-        self.loss_fn = nn.L1Loss()
+        self.loss_fn = nn.MSELoss()
         self.step = 1
         self.group_name = group_name
         self.run_name = run_name
@@ -42,7 +42,8 @@ class DiffusionTrainer:
             step=self.step,
             model={ k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in model_state.items() },
             optimizer={ k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in self.optimizer.state_dict().items() },
-            run_id=self.run_id)
+            run_id=self.run_id,
+            config=self.config)
     
     def load_state_dict(self, state_dict):
         if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
@@ -52,6 +53,7 @@ class DiffusionTrainer:
         self.optimizer.load_state_dict(state_dict['optimizer'])
         self.step = state_dict['step']
         self.run_id = state_dict['run_id']
+        self.config = Config(state_dict['config'])
 
     def save_to_checkpoint(self, filename='weights'):
         save_basename = f'{filename}-{self.step}.pth'
@@ -105,9 +107,8 @@ class DiffusionTrainer:
         self.noise_level = self.noise_level.to(device)
         t = torch.randint(0, len(self.noise_level), [N], device=x.device)
         noise_scale = self.noise_level[t].unsqueeze(1)
-        noise_scale_sqrt = noise_scale**0.5
         noise = torch.randn_like(x)
-        noisy_audio = noise_scale_sqrt * x + (1.0 - noise_scale)**0.5 * noise
+        noisy_audio = noise_scale**0.5 * x + (1.0 - noise_scale)**0.5 * noise
 
         self.optimizer.zero_grad()
         predicted = self.model(noisy_audio, t)

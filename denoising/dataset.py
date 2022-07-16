@@ -7,22 +7,25 @@ from glob import glob
 import os
 
 
+def load_audio(path):
+    audio = AudioSegment.from_file(path)
+    assert audio.frame_rate == 44100, f'Sample rate must be 44100 but got {audio.frame_rate} from "{path}".'
+    audio = np.array(audio.get_array_of_samples(), dtype=np.float32)
+    audio = librosa.util.normalize(audio)
+    return audio
+
+
 class AudioDataset(torch.utils.data.Dataset):
-    def __init__(self, paths, audio_format='mp4'):
+    def __init__(self, paths):
         super(AudioDataset, self).__init__()
         self.paths = paths
-        self.audio_format = audio_format
     
     def __len__(self):
         return len(self.paths)
     
     def __getitem__(self, idx):
         path = self.paths[idx]
-        audio = AudioSegment.from_file(path, self.audio_format)
-        assert audio.frame_rate == 44100, f'Sample rate must be 44100 but got {audio.frame_rate} from "{path}".'
-        audio = np.array(audio.get_array_of_samples(), dtype=np.float32)
-        audio = librosa.util.normalize(audio)
-        return audio
+        return load_audio(path)
 
 
 def collate(minibatch, audio_length):
